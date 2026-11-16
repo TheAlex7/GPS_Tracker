@@ -13,7 +13,7 @@
 HardwareSerial gpsSerial(2);
 BLECharacteristic *ledChar, *latChar, *lonChar, *statusChar;
 volatile bool bleConnected = false;
-bool oledOk = false, gotByte = false, haveFix = false;
+bool oledOk = false, gotByte = false, haveFix = false, havePosition = false;
 String gpsLine;
 double latitude = 0, longitude = 0;
 int satellites = -1;
@@ -112,6 +112,7 @@ void parseGps(String text, uint32_t now) {
   longitude = lon;
   satellites = newSatellites;
   haveFix = true;
+  havePosition = true;
   lastFix = now;
 }
 
@@ -192,10 +193,11 @@ void loop() {
   lastUpdate = now;
   String status = "FIX";
   if (!gotByte || uint32_t(now - lastByte) > 5000) status = "OFFLINE";
-  else if (!haveFix) status = "NO FIX";
+  else if (!haveFix) status = havePosition ? "LAST" : "NO FIX";
   else if (uint32_t(now - lastFix) > 3000) status = "STALE";
-  String lat = status == "FIX" ? String(latitude, 6) : String("--");
-  String lon = status == "FIX" ? String(longitude, 6) : String("--");
+  // Keep sending the last valid coordinates after the fix drops.
+  String lat = havePosition ? String(latitude, 6) : String("--");
+  String lon = havePosition ? String(longitude, 6) : String("--");
   status += " SATS:" + (satellites < 0 ? String("?") : String(satellites));
   if (oledOk) {
     iotDisplayLines(bleConnected ? "GPS / BLE connected" : "GPS / BLE waiting",
