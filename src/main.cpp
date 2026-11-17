@@ -53,6 +53,13 @@ bool gpsNumber(String text) {
   }
   return digit;
 }
+// Adds a human-readable label (descriptor 0x2901) that BLE apps can display.
+void addLabel(BLECharacteristic* c, const char* label) {
+  BLEDescriptor* d = new BLEDescriptor(BLEUUID((uint16_t)0x2901));
+  d->setValue(label);
+  c->addDescriptor(d);
+}
+
 
 int hexDigit(char c) {
   if (c >= '0' && c <= '9') return c - '0';
@@ -180,6 +187,8 @@ void setup() {
   pinMode(IoTPins::LED_1, OUTPUT);
   digitalWrite(IoTPins::LED_1, LOW);
 
+  
+
   BLEDevice::init("IoT-T09-GPS");
   BLEServer* server = BLEDevice::createServer();
   server->setCallbacks(new ServerCallbacks());
@@ -205,6 +214,16 @@ void setup() {
   fenceAlertChar = service->createCharacteristic(FENCE_ALERT_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
   fenceAlertChar->addDescriptor(new BLE2902());
   fenceAlertChar->setValue("NONE");
+
+  addLabel(ledChar,        "LED (write 1/0)");
+  addLabel(latChar,        "Latitude");
+  addLabel(lonChar,        "Longitude");
+  addLabel(statusChar,     "GPS status");
+  addLabel(fenceChar,      "Fence: write lat,lon,radius");
+  addLabel(fenceStateChar, "Fence state");
+  addLabel(fenceAlertChar, "Fence alert");
+
+
   service->start();
   BLEAdvertising* adv = BLEDevice::getAdvertising();
   adv->addServiceUUID(SERVICE_UUID);
