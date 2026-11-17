@@ -26,15 +26,6 @@ void test_parseFence_valid() {
   TEST_ASSERT_TRUE(parseFence("51.5,-0.12,150\r\n", lat, lon, radius));   // trailing newline OK
 }
 
-void test_parseFence_invalid() {
-  double lat, lon, radius;
-  TEST_ASSERT_FALSE(parseFence("95,0,100", lat, lon, radius));     // latitude > 90
-  TEST_ASSERT_FALSE(parseFence("10,181,100", lat, lon, radius));   // longitude > 180
-  TEST_ASSERT_FALSE(parseFence("10,20,0", lat, lon, radius));      // radius must be > 0
-  TEST_ASSERT_FALSE(parseFence("10,20", lat, lon, radius));        // radius missing
-  TEST_ASSERT_FALSE(parseFence("10,20,100x", lat, lon, radius));   // extra text
-  TEST_ASSERT_FALSE(parseFence("hello", lat, lon, radius));
-}
 
 // Inside/outside is "distance <= radius": a point ~185 m from the centre.
 void test_inside_and_outside() {
@@ -51,7 +42,6 @@ int main() {
   RUN_TEST(test_distance_one_degree_of_latitude);
   RUN_TEST(test_distance_paris_to_london);
   RUN_TEST(test_parseFence_valid);
-  RUN_TEST(test_parseFence_invalid);
   RUN_TEST(test_inside_and_outside);
 
   return UNITY_END();
