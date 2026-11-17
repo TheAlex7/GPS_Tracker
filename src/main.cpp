@@ -9,6 +9,8 @@
 #define GPS_LAT_UUID "83f10001-8ca4-4c09-bb11-7357ac492601"
 #define GPS_LON_UUID "83f10002-8ca4-4c09-bb11-7357ac492601"
 #define GPS_STATUS_UUID "83f10003-8ca4-4c09-bb11-7357ac492601"
+#define FENCE_CONFIG_UUID "83f10004-8ca4-4c09-bb11-7357ac492601"
+#define FENCE_STATE_UUID "83f10005-8ca4-4c09-bb11-7357ac492601"
 
 HardwareSerial gpsSerial(2);
 BLECharacteristic *ledChar, *latChar, *lonChar, *statusChar;
@@ -18,6 +20,12 @@ String gpsLine;
 double latitude = 0, longitude = 0;
 int satellites = -1;
 uint32_t lastByte = 0, lastFix = 0, lastUpdate = 0;
+
+// ---- Geofence: a point and a radius, both written by the user over BLE ----
+BLECharacteristic *fenceChar, *fenceStateChar;
+portMUX_TYPE fenceMux = portMUX_INITIALIZER_UNLOCKED;  // BLE task writes, loop() reads
+bool fenceSet = false;
+double fenceLat = 0, fenceLon = 0, fenceRadius = 0;    // degrees, degrees, metres
 
 // Field 0 is the sentence name; fields after it are separated by commas.
 String gpsField(String text, int wanted) {
@@ -116,6 +124,16 @@ void parseGps(String text, uint32_t now) {
   lastFix = now;
 }
 
+// ---- Geofence logic ----
+
+// Distance in metres between two points (haversine formula).
+double distanceMeters(double lat1, double lon1, double lat2, double lon2) {
+  double dLat = (lat2 - lat1) * DEG_TO_RAD, dLon = (lon2 - lon1) * DEG_TO_RAD;
+  double a = sin(dLat / 2) * sin(dLat / 2) +
+             cos(lat1 * DEG_TO_RAD) * cos(lat2 * DEG_TO_RAD) * sin(dLon / 2) * sin(dLon / 2);
+  return 2 * 6371000.0 * asin(sqrt(fmin(1.0, a)));
+}
+
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer*) override {
     bleConnected = true;
@@ -135,6 +153,30 @@ class LedCallbacks : public BLECharacteristicCallbacks {
     else return;
     digitalWrite(IoTPins::LED_1, on ? HIGH : LOW);
     c->setValue(on ? "ON" : "OFF");
+  }
+};
+
+// The user writes "lat,lon,radius", e.g. "51.5007,-0.1246,150" (degrees, degrees, metres).
+class FenceCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    char text[64] = "";
+    size_t len = c->getLength();
+    if (len < sizeof(text)) memcpy(text, c->getData(), len);
+    double lat, lon, radius;
+    char extra;
+    bool valid = sscanf(text, "%lf,%lf,%lf %c", &lat, &lon, &radius, &extra) == 3 &&
+                 fabs(lat) <= 90 && fabs(lon) <= 180 && radius > 0;
+    if (valid) {
+      portENTER_CRITICAL(&fenceMux);
+      fenceLat = lat;
+      fenceLon = lon;
+      fenceRadius = radius;
+      fenceSet = true;
+      portEXIT_CRITICAL(&fenceMux);
+    }
+    // Reading the characteristic always shows the fence in use.
+    c->setValue(fenceSet ? (String(fenceLat, 6) + "," + String(fenceLon, 6) + "," + String(fenceRadius, 0)).c_str()
+                         : "NOT SET");
   }
 };
 
@@ -164,6 +206,12 @@ void setup() {
   latChar->setValue("--");
   lonChar->setValue("--");
   statusChar->setValue("OFFLINE SATS:?");
+  fenceChar = service->createCharacteristic(FENCE_CONFIG_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+  fenceChar->setCallbacks(new FenceCallbacks());
+  fenceChar->setValue("NOT SET");
+  fenceStateChar = service->createCharacteristic(FENCE_STATE_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  fenceStateChar->addDescriptor(new BLE2902());
+  fenceStateChar->setValue("NOT SET");
   service->start();
   BLEAdvertising* adv = BLEDevice::getAdvertising();
   adv->addServiceUUID(SERVICE_UUID);
@@ -195,21 +243,36 @@ void loop() {
   if (!gotByte || uint32_t(now - lastByte) > 5000) status = "OFFLINE";
   else if (!haveFix) status = havePosition ? "LAST" : "NO FIX";
   else if (uint32_t(now - lastFix) > 3000) status = "STALE";
+
+  // ---- Geofence: compare the current position with the user's point + radius ----
+  portENTER_CRITICAL(&fenceMux);
+  bool fenceReady = fenceSet;
+  double fLat = fenceLat, fLon = fenceLon, fRadius = fenceRadius;
+  portEXIT_CRITICAL(&fenceMux);
+  String fence = "NOT SET";
+  if (fenceReady && status != "FIX") fence = "NO FIX";
+  else if (fenceReady) {
+    double distance = distanceMeters(fLat, fLon, latitude, longitude);
+    fence = String(distance <= fRadius ? "INSIDE " : "OUTSIDE ") + String(distance, 0) + "m";
+  }
+
   // Keep sending the last valid coordinates after the fix drops.
   String lat = havePosition ? String(latitude, 6) : String("--");
   String lon = havePosition ? String(longitude, 6) : String("--");
   status += " SATS:" + (satellites < 0 ? String("?") : String(satellites));
   if (oledOk) {
-    iotDisplayLines(bleConnected ? "GPS / BLE connected" : "GPS / BLE waiting",
+    iotDisplayLines(String(bleConnected ? "BLE ok " : "BLE wait ") + fence,
                     status, "Lat: " + lat, "Lon: " + lon);
   }
 
   latChar->setValue(lat.c_str());
   lonChar->setValue(lon.c_str());
   statusChar->setValue(status.c_str());
+  fenceStateChar->setValue(fence.c_str());
   if (bleConnected) {
     latChar->notify();
     lonChar->notify();
     statusChar->notify();
+    fenceStateChar->notify();
   }
 }
