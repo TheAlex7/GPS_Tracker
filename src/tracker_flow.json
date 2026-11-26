@@ -1,0 +1,423 @@
+[
+  {
+    "id": "gpsTab",
+    "type": "tab",
+    "label": "GPS Tracker (BLE)",
+    "disabled": false,
+    "info": "Run ble_bridge.py on this computer first. Map: http://localhost:1880/worldmap"
+  },
+  {
+    "id": "c1",
+    "type": "comment",
+    "name": "Data from the tracker (via ble_bridge.py, UDP 5005)",
+    "info": "",
+    "x": 230,
+    "y": 40,
+    "wires": [],
+    "z": "gpsTab"
+  },
+  {
+    "id": "udpIn",
+    "type": "udp in",
+    "name": "From BLE bridge",
+    "iface": "",
+    "port": "5005",
+    "ipv": "udp4",
+    "multicast": "false",
+    "group": "",
+    "datatype": "utf8",
+    "x": 140,
+    "y": 120,
+    "wires": [
+      [
+        "toJson"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "toJson",
+    "type": "json",
+    "name": "",
+    "property": "payload",
+    "action": "obj",
+    "pretty": false,
+    "x": 310,
+    "y": 120,
+    "wires": [
+      [
+        "byType"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "byType",
+    "type": "switch",
+    "name": "By type",
+    "property": "payload.type",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "loc",
+        "vt": "str"
+      },
+      {
+        "t": "eq",
+        "v": "alert",
+        "vt": "str"
+      },
+      {
+        "t": "eq",
+        "v": "log",
+        "vt": "str"
+      },
+      {
+        "t": "eq",
+        "v": "bridge",
+        "vt": "str"
+      }
+    ],
+    "checkall": "false",
+    "repair": false,
+    "outputs": 4,
+    "x": 460,
+    "y": 120,
+    "wires": [
+      [
+        "toMap"
+      ],
+      [
+        "alertToMap",
+        "dbgAlert"
+      ],
+      [
+        "dbgLog"
+      ],
+      [
+        "dbgBridge"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "toMap",
+    "type": "function",
+    "name": "Tracker + fence",
+    "func": "// Tracker marker + fence circle for the world map; node status shows GPS + fence state.\nconst d = msg.payload;\nflow.set(\"lastLoc\", d);\nnode.status({\n    fill: d.status === \"FIX\" ? \"green\" : (d.status === \"SLEEP\" ? \"blue\" : \"yellow\"),\n    shape: d.find ? \"ring\" : \"dot\",\n    text: `${d.status || \"?\"} | sats ${d.sats ?? \"?\"} | ${d.fence || \"\"}${d.find ? \" | FIND\" : \"\"}`\n});\nconst out = [];\nif (d.lat !== null && d.lon !== null) {\n    out.push({ payload: {\n        name: \"Tracker\", lat: d.lat, lon: d.lon, icon: \"fa-crosshairs\",\n        iconColor: d.status === \"FIX\" ? \"green\" : \"orange\",\n        status: d.status, sats: d.sats, fence: d.fence, find: d.find\n    }});\n}\nif (d.fence_r !== null && d.fence_lat !== null) {\n    out.push({ payload: { name: \"Fence\", lat: d.fence_lat, lon: d.fence_lon, radius: d.fence_r,\n        icon: \"fa-circle-o\", iconColor: \"red\", color: \"#d33\", fillColor: \"#d33\", fillOpacity: 0.1 } });\n    context.set(\"fenceShown\", true);\n} else if (context.get(\"fenceShown\")) {\n    out.push({ payload: { name: \"Fence\", deleted: true } });\n    context.set(\"fenceShown\", false);\n}\nreturn [out];",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 680,
+    "y": 60,
+    "wires": [
+      [
+        "worldmap"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "alertToMap",
+    "type": "function",
+    "name": "Alert markers",
+    "func": "// Drop a red marker where each \"left the fence\" alert happened.\nconst a = msg.payload;\nif (a.event !== \"exit\" || a.lat === null || a.lon === null) return null;\nconst n = (context.get(\"count\") || 0) + 1;\ncontext.set(\"count\", n);\nmsg.payload = { name: \"Alert \" + n, lat: a.lat, lon: a.lon, icon: \"fa-exclamation-triangle\",\n    iconColor: \"red\", alert: a.msg, time: new Date().toLocaleTimeString() };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 680,
+    "y": 120,
+    "wires": [
+      [
+        "worldmap"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "worldmap",
+    "type": "worldmap",
+    "name": "Tracker map",
+    "lat": "33.6405",
+    "lon": "-117.8443",
+    "zoom": "17",
+    "layer": "OSMG",
+    "cluster": "",
+    "maxage": "",
+    "usermenu": "show",
+    "layers": "show",
+    "panit": "true",
+    "panlock": "false",
+    "zoomlock": "false",
+    "hiderightclick": "false",
+    "coords": "none",
+    "showgrid": "false",
+    "showruler": "false",
+    "allowFileDrop": "false",
+    "path": "/worldmap",
+    "overlist": "DR,CO,RA,DN",
+    "maplist": "OSMG,OSMC,EsriC,EsriS,UKOS",
+    "mapname": "",
+    "mapurl": "",
+    "mapopt": "",
+    "mapwms": false,
+    "x": 900,
+    "y": 90,
+    "wires": [],
+    "z": "gpsTab"
+  },
+  {
+    "id": "dbgAlert",
+    "type": "debug",
+    "name": "Alerts",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload.msg",
+    "targetType": "msg",
+    "statusVal": "payload.msg",
+    "statusType": "msg",
+    "x": 670,
+    "y": 180,
+    "wires": [],
+    "z": "gpsTab"
+  },
+  {
+    "id": "dbgLog",
+    "type": "debug",
+    "name": "Log",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload.msg",
+    "targetType": "msg",
+    "statusVal": "payload.msg",
+    "statusType": "msg",
+    "x": 660,
+    "y": 240,
+    "wires": [],
+    "z": "gpsTab"
+  },
+  {
+    "id": "dbgBridge",
+    "type": "debug",
+    "name": "Bridge",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "payload",
+    "statusType": "msg",
+    "x": 670,
+    "y": 300,
+    "wires": [],
+    "z": "gpsTab"
+  },
+  {
+    "id": "c2",
+    "type": "comment",
+    "name": "Commands to the tracker (click the buttons; UDP 5006)",
+    "info": "",
+    "x": 240,
+    "y": 380,
+    "wires": [],
+    "z": "gpsTab"
+  },
+  {
+    "id": "injFindOn",
+    "type": "inject",
+    "name": "Find ON",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "find 1",
+    "payloadType": "str",
+    "x": 120,
+    "y": 440,
+    "wires": [
+      [
+        "udpOut"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "injFindOff",
+    "type": "inject",
+    "name": "Find OFF",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "find 0",
+    "payloadType": "str",
+    "x": 120,
+    "y": 480,
+    "wires": [
+      [
+        "udpOut"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "injFenceHere",
+    "type": "inject",
+    "name": "Fence here (50 m)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "str",
+    "x": 140,
+    "y": 540,
+    "wires": [
+      [
+        "fenceHere"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "fenceHere",
+    "type": "function",
+    "name": "Fence at tracker",
+    "func": "// Fence centred on the tracker's latest position. Change the radius below (metres, >= 20).\nconst radius = 50;\nconst d = flow.get(\"lastLoc\");\nif (!d || d.lat === null || d.lon === null) {\n    node.warn(\"No tracker position yet\");\n    return null;\n}\nmsg.payload = `fence ${d.lat.toFixed(6)},${d.lon.toFixed(6)},${radius}`;\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 350,
+    "y": 540,
+    "wires": [
+      [
+        "udpOut"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "injFenceCustom",
+    "type": "inject",
+    "name": "Fence: edit me",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "fence 33.640500,-117.844300,50",
+    "payloadType": "str",
+    "x": 140,
+    "y": 600,
+    "wires": [
+      [
+        "udpOut"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "injFencePhone",
+    "type": "inject",
+    "name": "Fence: phone mode 50 m",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "fence PHONE,50",
+    "payloadType": "str",
+    "x": 160,
+    "y": 640,
+    "wires": [
+      [
+        "udpOut"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "injFenceOff",
+    "type": "inject",
+    "name": "Fence OFF",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "fence OFF",
+    "payloadType": "str",
+    "x": 120,
+    "y": 680,
+    "wires": [
+      [
+        "udpOut"
+      ]
+    ],
+    "z": "gpsTab"
+  },
+  {
+    "id": "udpOut",
+    "type": "udp out",
+    "name": "To BLE bridge",
+    "addr": "127.0.0.1",
+    "iface": "",
+    "port": "5006",
+    "ipv": "udp4",
+    "outport": "",
+    "base64": false,
+    "multicast": "false",
+    "x": 600,
+    "y": 560,
+    "wires": [],
+    "z": "gpsTab"
+  }
+]
